@@ -10,6 +10,7 @@ See also test_gen_instr_board.py
 from abc import ABC,abstractmethod
 from numpy import pi,floor,ceil
 import numpy
+import csv #For creating .csv bill-of-materials
 
 class Xml(ABC) :
     @abstractmethod
@@ -82,7 +83,7 @@ class Circle(Part):
         return '<circle x="{:.5f}" y="{:.5f}" radius="{:.5f}" width="{:.5f}" layer="{}"/>\n'.format(self.x,self.y,self.diameter/2,self.width,self.layer)
 
 class Wire(Xml):
-    def __init__(self,x1,y1,x2,y2,width=0.3048,layer=1):
+    def __init__(self,x1,y1,x2,y2,width=0.3048,layer=1,curve=None):
         '''
         Representation of wire 
         
@@ -90,6 +91,7 @@ class Wire(Xml):
         x2,y2=end point of wire
         width=width of wire, default=0.3048 (i.e. 0.012" in mm)
         layer=layer of wire.  Default=1 (top copper); 21=top silkscreen
+        curve=number of degrees of curvature between x1,y1 and x2,y2.  Positive for counter-clockwise, 1 to 2, negative for counterclockwise (?)
         '''
         self.x1=x1
         self.y1=y1
@@ -97,10 +99,13 @@ class Wire(Xml):
         self.y2=y2
         self.width=width
         self.layer=layer
+        self.curve=curve
     
     def get_str(self):
-        return '<wire x1="{:.5f}" y1="{:.5f}" x2="{:.5f}" y2="{:.5f}" width="{:.5f}" layer="{}"/>\n'.format(self.x1,self.y1,self.x2,self.y2,self.width,self.layer)
-    
+        rep_str='<wire x1="{:.5f}" y1="{:.5f}" x2="{:.5f}" y2="{:.5f}" width="{:.5f}" layer="{}"'.format(self.x1,self.y1,self.x2,self.y2,self.width,self.layer)
+        if not self.curve is None :
+            rep_str+=' curve="{}"'.format(self.curve)
+        return rep_str+'/>\n'
 class Pad(Part) :
     def __init__(self,name,x,y,diameter,rotation=0,\
                 drill=0,shape="round",\
@@ -251,7 +256,7 @@ class Smd(Part):
         self._stop=stop
         
     def get_str(self):
-        return '<smd name="{}" x="{:.5f}" y="{:.5f}" rotation="R{:.5f}" dx="{:.5f}" dy="{:.5f}" layer="{}" roundness="{}" stop="{}" thermals="{}" cream="{}"/>\n'.format(self.name,self.x,self.y,self.rotation,self.dx,self.dy,self.layer,self.roundness,self.stop,self.thermals,self.cream)
+        return '<smd name="{}" x="{:.5f}" y="{:.5f}" rot="R{:.5f}" dx="{:.5f}" dy="{:.5f}" layer="{}" roundness="{}" stop="{}" thermals="{}" cream="{}"/>\n'.format(self.name,self.x,self.y,self.rotation,self.dx,self.dy,self.layer,self.roundness,self.stop,self.thermals,self.cream)
 
 class Text:
     def __init__(self,x,y,size,layer,text,rotation=0,font='proportional',distance=50,align='bottom-left',ratio=8):
@@ -329,7 +334,7 @@ class LibraryPackage(Xml) :
         return out
 
 class Element(Part):
-    def __init__(self,name,package,x,y,rotation,value=""):
+    def __init__(self,name,package,x,y,rotation,value="",mirror=False):
         '''
         Board instance of an instance of LibraryPackage (i.e. LibraryPackage specifies a class of part, and element is an instance of that class).
         
@@ -339,6 +344,7 @@ class Element(Part):
         package=instance of the LibraryPackage of which this element is an instance.
         x,y=location of part on board
         value=Not sure - default is empty string, ""
+        mirror=whether part should be mirrored to, e.g., bottom of board (text will appear backward from top-down view).  Boolean, default=false
         
         T. Golfinopoulos, 27 September 2018
         '''
@@ -349,6 +355,7 @@ class Element(Part):
         self.library_urn=package.get_lib_urn()
         self.rotation=rotation
         self.value=value
+        self.mirror=mirror
         
     def get_pads(self):
         return self.package.get_pieces()
@@ -375,7 +382,13 @@ class Element(Part):
         return self.y+numpy.sin(self.rotation*pi/180)*self.package.get_piece_x(pad_name)+numpy.cos(self.rotation*pi/180)*self.package.get_piece_y(pad_name)
         
     def get_str(self):
-        out='<element name="{}" library="{}" library_urn="{}" package="{}" value="{}" x="{:0.5f}" y="{:0.5f}" rot="R{:0.5f}"/>\n'.format(self.name,self.library,self.library_urn,self.package_name,self.value,self.x,self.y,self.rotation)
+        #An "M" before rotation field causes part to be mirrored
+        if self.mirror :
+            mirror_str="M"
+        else :
+            mirror_str=""
+        
+        out='<element name="{}" library="{}" library_urn="{}" package="{}" value="{}" x="{:0.5f}" y="{:0.5f}" rot="{}R{:0.5f}"/>\n'.format(self.name,self.library,self.library_urn,self.package_name,self.value,self.x,self.y,mirror_str,self.rotation)
         return out
 
 class Signal(Xml):
@@ -408,10 +421,10 @@ class Signal(Xml):
         self._airwireshidden=airwireshidden
         
     def get_str(self):
-        out='<signal name="{}">\n'.format(self.name)
+        out='<signal name="{}" airwireshidden="{}">\n'.format(self.name,self.airwireshidden)
         for e in self.elems :
             #Put name of each element and pad
-            out+='<contactref element="{}" pad="{}" airwireshidden="{}"/>\n'.format(e[0].name,e[1],self.airwireshidden)
+            out+='<contactref element="{}" pad="{}"/>\n'.format(e[0].name,e[1])
         
         #Place wires
         for i in range(1,len(self.elems)):
@@ -636,3 +649,80 @@ class BrdFile:
         out+='</signals>\n'
         out+=self.get_end()
         return out
+
+    def make_bom(self,fname='bom.csv',heading=None):
+        '''
+        Generate a bill-of-materials (BOM) from elements.  Write to csv.  Delimeter is semicolon (;).
+        
+        make_bom(self,fname='bom.csv',heading=None):
+        
+        fname=filename into which bill of materials will be written.  Must end with .csv file extension.  Default="bom.csv"
+        heading=Header information that will appear at top of BOM, e.g. project title, name, contact info, etc.  String or None.  Default=None.
+        
+        USAGE:
+        my_brd.make_bom()
+        my_brd.make_bom('my_bom.csv')
+        my_brd.make_bom('my_bom.csv','Project 3\nJohn Doe\nPhone: 555-5555')
+        
+        TG, 9 Dec. 2018
+        '''
+        if fname[-4:] != '.csv':
+            raise ValueError('File name extension must be .csv - you entered file name, {}'.format(fname))
+            
+        #Find all unique element varieties 
+        #Each element is an instance of a particular package
+        #Each element instance has a unique name
+        unique_packages=[]
+        package_map=[]
+        elem_map=[]
+        for e in self.elements :
+            if not e.package_name in unique_packages :
+                unique_packages.append(e.package_name)
+                package_map.append((e.package_name,[]))
+                elem_map.append((e.package_name,[]))
+        
+        package_map=dict(package_map)
+        elem_map=dict(elem_map) #Map instances of elements by package name
+        
+        for e in self.elements :
+            package_map[e.package_name].append(e.name) #Add part designation to map
+            elem_map[e.package_name].append(e) #Add part designation to map
+        
+        csvfile=open(fname, 'w', newline='')
+        bomwriter = csv.writer(csvfile, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        
+        bom_col_names=['Item #','Qty Per Board','Ref Des.','Manufacturer',\
+                       'Mfg Part #','Description','Package	Type','# of leads','Shipped Inventory']
+        
+        #spamwriter.writerow(['Spam'] * 5 + ['Baked Beans'])
+        #spamwriter.writerow(['Spam', 'Lovely Spam', 'Wonderful Spam'])
+
+        bomwriter.writerow([self.title]) #Write title
+        if not heading is None :
+            bomwriter.writerow([heading])
+
+        bomwriter.writerow(['']) #Empty row, spacing
+        
+        #Write column headings
+        bomwriter.writerow(bom_col_names)
+        
+        #Add a row for each unique part
+        for i in range(len(unique_packages)):
+            row_data=[] #Initialize row data
+            row_data.append(i+1) #Item # - start counting at 1
+            row_data.append(len(package_map[unique_packages[i]])) #Number if pieces of this part
+            row_data.append(', '.join(package_map[unique_packages[i]])) #Part designators in comma-separated list
+            row_data.append('') #Manufacturer - not recorded
+            row_data.append('') #Manufacturer part number - not recorded
+            row_data.append('') #Description - not recorded
+            row_data.append(unique_packages[i]) #Name of package
+            row_data.append(len(elem_map[unique_packages[i]][0].get_pads())) #Number of leads
+            row_data.append('') #Shipped inventory - not recorded
+            
+            bomwriter.writerow(row_data) #Add row of data
+            
+        #Close BOM file
+        csvfile.close()
+        
+        msg="BOM written to "+fname
+        print("="*len(msg)+'\n'+msg+"\n"+"="*len(msg))
