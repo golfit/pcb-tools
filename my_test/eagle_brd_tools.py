@@ -699,7 +699,7 @@ class BrdFile:
         bomwriter = csv.writer(csvfile, delimiter=';', quotechar='|', quoting=csv.QUOTE_MINIMAL)
         
         bom_col_names=['Item #','Qty Per Board','Ref Des.','Manufacturer',\
-                       'Mfg Part #','Description','Package	Type','# of leads','Shipped Inventory']
+                       'Mfg Part #','Description','Package Type','# of leads','Shipped Inventory']
         
         #spamwriter.writerow(['Spam'] * 5 + ['Baked Beans'])
         #spamwriter.writerow(['Spam', 'Lovely Spam', 'Wonderful Spam'])
