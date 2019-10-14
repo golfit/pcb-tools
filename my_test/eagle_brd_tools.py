@@ -1,6 +1,6 @@
 '''
-This Python script is for getting familiar with how to build
-Eagle .brd files in an algorithmic way to place parts.
+This Python script assembles a few tools useful for creating
+Eagle .brd files with objects placed in an algorithmic way.
 
 T. Golfinopoulos, 26 September 2018
 
@@ -259,7 +259,7 @@ class Smd(Part):
         return '<smd name="{}" x="{:.5f}" y="{:.5f}" rot="R{:.5f}" dx="{:.5f}" dy="{:.5f}" layer="{}" roundness="{}" stop="{}" thermals="{}" cream="{}"/>\n'.format(self.name,self.x,self.y,self.rotation,self.dx,self.dy,self.layer,self.roundness,self.stop,self.thermals,self.cream)
 
 class Text:
-    def __init__(self,x,y,size,layer,text,rotation=0,font='proportional',distance=50,align='bottom-left',ratio=8):
+    def __init__(self,x,y,size,layer,text,rotation=0,font='proportional',distance=50,align='bottom-left',ratio=8,mirror=False):
         self.x=x
         self.y=y
         self.rotation=rotation
@@ -270,8 +270,13 @@ class Text:
         self.ratio=ratio
         self.size=size
         self.text=text
+        self.mirror=mirror
     def get_str(self):
-        return '<text x="{:.5f}" y="{:.5f}" size="{:.5f}" layer="{}" rot="R{:.5f}" ratio="{}" font="{}" distance="{}" align="{}">{}</text>\n'.format(self.x,self.y,self.size,self.layer,self.rotation,self.ratio,self.font,self.distance,self.align,self.text)
+        if self.mirror :
+            mirror_str='M'
+        else :
+            mirror_str=''
+        return '<text x="{:.5f}" y="{:.5f}" size="{:.5f}" layer="{}" rot="{}R{:.5f}" ratio="{}" font="{}" distance="{}" align="{}">{}</text>\n'.format(self.x,self.y,self.size,self.layer,mirror_str,self.rotation,self.ratio,self.font,self.distance,self.align,self.text)
 
 class LibraryPackage(Xml) :
     def __init__(self,name,library=None,description=None):
@@ -607,7 +612,9 @@ class BrdFile:
         out=self.get_header()
         
         #Add layers
-        f=open('layers.xml')
+        #f=open('layers.xml')
+        new_path='/media/golfit/ea24140b-6ec6-4bf6-9f7b-1f3dea715e4d/golfit/git/pcb-tools/my_test'
+        f=open('{:s}/layers.xml'.format(new_path))
         out+=f.read()
         f.close()
         
@@ -623,7 +630,7 @@ class BrdFile:
         #Add libraries
         out+='<libraries>\n'
         #Add connector libraries
-        f=open('connector_library.xml')
+        f=open(new_path+'/connector_library.xml')
         out+=f.read()
         f.close()
         #Add all local libraries
@@ -632,7 +639,7 @@ class BrdFile:
         out+='</libraries>\n'
         
         #Add attributes, including design rules, routing rules, etc.
-        attributes_file=open('brd_attributes.xml')
+        attributes_file=open(new_path+'/brd_attributes.xml')
         out+=attributes_file.read()
         attributes_file.close()
         
